@@ -291,10 +291,10 @@ show_menu() {
     echo -e "3) Install CPU microcode"
     echo -e "4) Full Zsh setup (install + config + shell switch)"
     echo -e "5) GitHub search + clone"
-    echo -e "6) Start new shell session"
-    echo -e "7) Install XFCE4 Desktop (full)"
-    echo -e "8) Install XFCE4 Desktop (minimal)"
-    echo -e "9) Run ALL tasks"
+    echo -e "6) Install XFCE4 Desktop (full)"
+    echo -e "7) Install XFCE4 Desktop (minimal)"
+    echo -e "8) Run ALL tasks"
+    echo -e "9) Start new shell session"
     echo -e "0) Exit"
     echo -ne "${YELLOW}Choose an option: ${RESET}"
     read -r choice
@@ -305,10 +305,10 @@ show_menu() {
       3) install_microcode ;;
       4) setup_zsh_all ;;
       5) search_and_clone_repo ;;
-      6) start_new_shell_session ;;
-      7) install_xfce4 ;;
-      8) install_xfce4_minimal ;;
-      9) run_all ;;
+      6) install_xfce4 ;;
+      7) install_xfce4_minimal ;;
+      8) run_all ;;
+      9) start_new_shell_session ;;
       0) exit 0 ;;
       *) warn "Invalid choice." ;;
     esac
