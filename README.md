@@ -1,34 +1,31 @@
-# arch-setup-xfce
+# Arch Setup xfce
 
-A streamlined, menu‑driven post‑install script designed to automate the most common setup tasks after installing Arch Linux. This toolkit handles package installation, shell configuration, microcode setup, dotfile deployment, and more — all with colorized output, safety checks, and automatic backups.
+### A streamlined, menu‑driven post‑install script designed to automate the most common setup tasks after installing Arch Linux. This toolkit handles package installation, shell configuration, microcode setup, dotfile deployment, and more — all with colorized output, safety checks, and automatic backups.
 
-✨ Features
-✔ Base Package Installation
-Installs a curated set of essential tools for a modern Arch environment:
+# ✨ Features
+## ✔ Base Package Installation
+### Installs a curated set of essential tools for a modern Arch environment:
 
 nano, git, kitty, chromium
-
-zsh, zsh-autosuggestions, zsh-syntax-highlighting
-
-starship, fd, bat, exa, ripgrep
-
+zsh, zsh-autosuggestions, zsh-syntax-highlighting,
+starship, fd, bat, exa, ripgrep,
 zram-generator
 
-These packages provide a fast, comfortable, and productive terminal experience.
+ These packages provide a fast, comfortable, and productive terminal experience.
 
-✔ Automatic Microcode Detection & Installation
+## ✔ Automatic Microcode Detection & Installation
 The script detects your CPU vendor:
 
 Intel → installs intel-ucode
 
 AMD → installs amd-ucode
 
-If microcode is installed already, it skips it safely.
+### If microcode is installed already, it skips it safely.
 After installation, the script automatically rebuilds GRUB:
 
-Code
 grub-mkconfig -o /boot/grub/grub.cfg
-✔ Zsh Shell Setup
+
+## ✔ Zsh Shell Setup
 You can optionally switch your default shell to zsh.
 The script:
 
@@ -38,23 +35,23 @@ Changes your login shell
 
 Notifies you if it’s already set
 
-✔ Dotfile Deployment
-The toolkit automatically clones (or updates) your GitHub repo:
+## ✔ Dotfile Deployment
+### The toolkit automatically clones the GitHub repo:
 
-Code
-https://github.com/Der3l1ct/arch-configs
+https://github.com/cokesandtokes/arch-setup-xfce
+
 Then it safely deploys:
 
 .zshrc → ~/.zshrc
 
 kitty.conf → ~/.config/kitty/kitty.conf
 
-Before overwriting anything, the script creates timestamped backups:
+### Before overwriting anything, the script creates timestamped backups:
 
-Code
 .zshrc.bak-YYYYMMDD-HHMMSS
 kitty.conf.bak-YYYYMMDD-HHMMSS
-✔ Menu‑Driven Interface
+
+## ✔ Menu‑Driven Interface
 Instead of forcing everything at once, the script provides a clean menu:
 
 Install base packages
@@ -75,11 +72,11 @@ Reboot
 
 This makes the tool flexible for both fresh installs and incremental updates.
 
-✔ Colorized Output
+## ✔ Colorized Output
 Readable, friendly, and easy to follow.
 Errors, warnings, and confirmations are clearly highlighted.
 
-✔ End‑of‑Script Options
+## ✔ End‑of‑Script Options
 When the script finishes, you can choose to:
 
 Start a new terminal session (zsh or bash)
@@ -88,28 +85,28 @@ Reboot the system
 
 Exit normally
 
-📦 Requirements
-Arch Linux or an Arch‑based distro
+## 📦 Requirements
+EndevourOS or an Arch‑based distro
 
 Internet connection (for cloning the repo)
 
 GRUB bootloader (for microcode rebuild step)
 
-🚀 Usage
+## 🚀 Usage
 Clone the repo:
 
-bash
-git clone https://github.com/Der3l1ct/arch-configs
-cd arch-configs
+git clone https://github.com/cokesandtokes/arch-setup-xfce
+cd arch-setup-xfce
 Make the script executable:
 
 bash
-chmod +x arch-toolkit.sh
+chmod +x ./setup.sh
 Run it:
 
 bash
-./arch-toolkit.sh
-🛡 Safety Features
+./setup.sh
+
+## 🛡 Safety Features
 Automatic backups of existing configs
 
 Checks before overwriting files
