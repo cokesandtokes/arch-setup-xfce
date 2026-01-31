@@ -25,17 +25,16 @@ REPO_DIR="$HOME/arch-setup-xfce"
 KITTY_DIR="$HOME/.config/kitty"
 ZSHRC_DEST="$HOME/.zshrc"
 KITTY_DEST="$KITTY_DIR/kitty.conf"
+DOTFILES_DIR="$HOME/dotfiles"
 
-timestamp() {
-  date +"%Y%m%d-%H%M%S"
-}
+timestamp() { date +"%Y%m%d-%H%M%S"; }
 
 backup_file() {
   local file="$1"
   if [[ -f "$file" ]]; then
     local bak="${file}.bak-$(timestamp)"
     cp -f "$file" "$bak"
-    warn "Existing $(basename "$file") backed up to $(basename "$bak")"
+    warn "Backed up $(basename "$file") → $(basename "$bak")"
   fi
 }
 
@@ -44,9 +43,29 @@ ensure_repo() {
     info "Cloning repository: $REPO_URL"
     git clone "$REPO_URL" "$REPO_DIR" || { err "Failed to clone repo."; return 1; }
   else
-    info "Repository exists. Pulling latest changes..."
-    git -C "$REPO_DIR" pull || { err "Failed to pull latest changes."; return 1; }
+    info "Updating repository..."
+    git -C "$REPO_DIR" pull || { err "Failed to update repo."; return 1; }
   fi
+}
+
+########################################
+# Install yay (AUR helper)
+########################################
+
+install_yay() {
+  if command -v yay &>/dev/null; then
+    ok "yay already installed."
+    return
+  fi
+
+  info "Installing yay..."
+  sudo pacman -S --noconfirm --needed base-devel git
+
+  git clone https://aur.archlinux.org/yay.git /tmp/yay
+  cd /tmp/yay || return
+  makepkg -si --noconfirm
+
+  ok "yay installed."
 }
 
 ########################################
@@ -54,9 +73,13 @@ ensure_repo() {
 ########################################
 
 search_and_clone_repo() {
+  if ! command -v jq &>/dev/null; then
+    info "Installing jq..."
+    sudo pacman -S --noconfirm jq
+  fi
+
   echo -ne "${CYAN}Enter GitHub search term: ${RESET}"
   read -r term
-
   [[ -z "$term" ]] && { warn "Search term cannot be empty."; return; }
 
   info "Searching GitHub for '$term'..."
@@ -71,10 +94,10 @@ search_and_clone_repo() {
     return
   fi
 
-  echo -e "${MAGENTA}Select a repository to clone:${RESET}"
+  echo -e "${MAGENTA}Select a repository:${RESET}"
   local i=1
   for repo in "${results[@]}"; do
-    echo -e "$i) $repo"
+    echo "$i) $repo"
     ((i++))
   done
 
@@ -89,182 +112,142 @@ search_and_clone_repo() {
   local selected_repo
   selected_repo=$(echo "${results[$((choice-1))]}" | cut -d'|' -f1 | xargs)
 
-  echo -ne "${CYAN}Clone into which directory? (default: \$HOME): ${RESET}"
+  echo -ne "${CYAN}Clone into directory (default: \$HOME): ${RESET}"
   read -r dest
   [[ -z "$dest" ]] && dest="$HOME"
 
-  info "Cloning https://github.com/$selected_repo into $dest"
   git clone "https://github.com/$selected_repo" "$dest/$(basename "$selected_repo")" \
-    && ok "Repository cloned successfully." \
+    && ok "Repository cloned." \
     || err "Clone failed."
 }
 
 ########################################
-# Tasks
+# System Setup (base packages + yay + cleanup)
 ########################################
 
-install_base_packages() {
+system_setup() {
   info "Installing base packages..."
   sudo pacman -S --noconfirm \
     nano git kitty chromium zsh \
     zsh-autosuggestions zsh-syntax-highlighting \
-    starship fd bat exa ripgrep zram-generator \
-    && ok "Base packages installed."
-  echo
+    starship fd bat exa ripgrep zram-generator jq
+
+  install_yay
+
+  sudo pacman -Rns --noconfirm $(pacman -Qtdq 2>/dev/null) 2>/dev/null
+  sudo pacman -Scc --noconfirm
+
+  ok "System setup complete."
 }
 
-setup_kitty_config() {
+########################################
+# Shell & Terminal Setup
+########################################
+
+shell_terminal_setup() {
   ensure_repo || return 1
 
+  # Zsh
+  sudo pacman -S --noconfirm zsh
+  backup_file "$ZSHRC_DEST"
+  cp -f "$REPO_DIR/.zshrc" "$ZSHRC_DEST"
+  chsh -s "$(command -v zsh)"
+
+  # Kitty
   mkdir -p "$KITTY_DIR"
-
-  local src="$REPO_DIR/kitty.conf"
-  if [[ ! -f "$src" ]]; then
-    err "kitty.conf not found in repo."
-    return 1
-  fi
-
   backup_file "$KITTY_DEST"
-  info "Copying kitty.conf to $KITTY_DEST"
-  cp -f "$src" "$KITTY_DEST"
-  ok "kitty.conf updated."
-  echo
+  cp -f "$REPO_DIR/kitty.conf" "$KITTY_DEST"
+
+  ok "Shell + terminal setup complete."
 }
+
+########################################
+# Microcode
+########################################
 
 install_microcode() {
   echo -ne "${CYAN}Install CPU microcode? (y/n): ${RESET}"
-  read -r microcode_answer
+  read -r ans
+  [[ "$ans" != "y" ]] && return
 
-  [[ "$microcode_answer" != "y" ]] && { info "Skipping microcode installation."; echo; return 0; }
+  local vendor pkg
+  vendor=$(lscpu | awk -F: '/Vendor ID/ {gsub(/^[ \t]+/, "", $2); print $2}')
 
-  local cpu_vendor
-  cpu_vendor=$(lscpu | awk -F: '/Vendor ID/ {gsub(/^[ \t]+/, "", $2); print $2}')
-
-  local pkg=""
-  case "$cpu_vendor" in
+  case "$vendor" in
     GenuineIntel) pkg="intel-ucode" ;;
     AuthenticAMD) pkg="amd-ucode" ;;
-    *) err "Unknown CPU vendor: $cpu_vendor"; return 1 ;;
+    *) err "Unknown CPU vendor."; return ;;
   esac
 
-  info "Detected CPU vendor: $cpu_vendor"
-  info "Microcode package: $pkg"
-
-  if pacman -Qi "$pkg" &>/dev/null; then
-    ok "Microcode package '$pkg' is already installed."
-  else
-    info "Installing $pkg..."
-    sudo pacman -S --noconfirm "$pkg" && ok "$pkg installed."
-  fi
-
-  echo
-  info "Rebuilding GRUB configuration..."
-  sudo grub-mkconfig -o /boot/grub/grub.cfg && ok "GRUB successfully rebuilt."
-  echo
+  sudo pacman -S --noconfirm "$pkg"
+  sudo grub-mkconfig -o /boot/grub/grub.cfg
+  ok "Microcode installed."
 }
 
 ########################################
-# Unified Zsh Setup
+# Dotfile Manager
 ########################################
 
-setup_zsh_all() {
-  ensure_repo || return 1
+setup_dotfiles() {
+  echo -ne "${CYAN}Dotfiles directory (default: ~/dotfiles): ${RESET}"
+  read -r dir
+  [[ -z "$dir" ]] && dir="$DOTFILES_DIR"
 
-  info "Installing zsh + plugins + applying .zshrc + switching shell"
+  [[ ! -d "$dir" ]] && { err "Directory not found."; return; }
 
-  if ! command -v zsh &>/dev/null; then
-    sudo pacman -S --noconfirm zsh || { err "Failed to install zsh."; return 1; }
-  fi
-
-  local src="$REPO_DIR/.zshrc"
-  if [[ ! -f "$src" ]]; then
-    err ".zshrc not found in repo."
-    return 1
-  fi
-
-  backup_file "$ZSHRC_DEST"
-  cp -f "$src" "$ZSHRC_DEST"
-  ok ".zshrc applied."
-
-  local zsh_path
-  zsh_path=$(command -v zsh)
-
-  if [[ "$SHELL" != "$zsh_path" ]]; then
-    chsh -s "$zsh_path" && ok "Default shell changed to zsh."
-  else
-    ok "Shell already set to zsh."
-  fi
-
-  echo
+  for file in "$dir"/.*; do
+    [[ "$(basename "$file")" =~ ^(\.|\.\.|\.git)$ ]] && continue
+    backup_file "$HOME/$(basename "$file")"
+    ln -sf "$file" "$HOME/"
+    ok "Linked $(basename "$file")"
+  done
 }
 
 ########################################
-# XFCE4 Installation
+# System Hardening
+########################################
+
+system_hardening() {
+  info "Applying hardening..."
+
+  sudo sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+  sudo systemctl restart sshd
+
+  echo "kernel.kptr_restrict=2" | sudo tee /etc/sysctl.d/99-kptr.conf >/dev/null
+  sudo sysctl --system >/dev/null
+
+  ok "Hardening applied."
+}
+
+########################################
+# XFCE Installation
 ########################################
 
 install_xfce4() {
-  echo -ne "${CYAN}Install full XFCE4 desktop environment? (y/n): ${RESET}"
-  read -r xfce_answer
-
-  [[ "$xfce_answer" != "y" ]] && { info "Skipping XFCE4 installation."; echo; return 0; }
-
-  info "Installing XFCE4 (full)..."
-
   sudo pacman -S --noconfirm \
     xfce4 xfce4-goodies \
-    lightdm lightdm-gtk-greeter lightdm-gtk-greeter-settings \
+    lightdm lightdm-gtk-greeter \
     networkmanager \
-    pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber \
-    gvfs gvfs-mtp thunar-archive-plugin file-roller \
-    xdg-user-dirs xdg-utils \
-    && ok "XFCE4 desktop installed."
+    pipewire pipewire-alsa pipewire-pulse wireplumber \
+    gvfs thunar-archive-plugin file-roller \
+    xdg-user-dirs xdg-utils
 
   sudo systemctl enable lightdm
   sudo systemctl enable NetworkManager
-  ok "Services enabled."
-  echo
+  ok "XFCE installed."
 }
 
 install_xfce4_minimal() {
-  echo -ne "${CYAN}Install minimal XFCE4 environment? (y/n): ${RESET}"
-  read -r xfce_min_answer
-
-  [[ "$xfce_min_answer" != "y" ]] && { info "Skipping minimal XFCE4 installation."; echo; return 0; }
-
-  info "Installing minimal XFCE4..."
-
   sudo pacman -S --noconfirm \
     xfce4 \
     lightdm lightdm-gtk-greeter \
     networkmanager \
     pipewire pipewire-alsa pipewire-pulse wireplumber \
-    xdg-user-dirs xdg-utils \
-    && ok "Minimal XFCE4 installed."
+    xdg-user-dirs xdg-utils
 
   sudo systemctl enable lightdm
   sudo systemctl enable NetworkManager
-  ok "Services enabled."
-  echo
-}
-
-########################################
-# Shell Session
-########################################
-
-start_new_shell_session() {
-  echo -e "${CYAN}Choose an option:${RESET}"
-  echo -e "1) Start a new terminal session"
-  echo -e "2) Reboot the system"
-  echo -e "3) Exit"
-  echo -ne "${YELLOW}Selection: ${RESET}"
-  read -r choice
-
-  case "$choice" in
-    1) exec "${SHELL:-bash}" ;;
-    2) sudo reboot ;;
-    3) info "Exiting." ;;
-    *) warn "Invalid choice." ;;
-  esac
+  ok "Minimal XFCE installed."
 }
 
 ########################################
@@ -272,11 +255,11 @@ start_new_shell_session() {
 ########################################
 
 run_all() {
-  install_base_packages
-  setup_kitty_config
+  system_setup
+  shell_terminal_setup
   install_microcode
-  setup_zsh_all
-  start_new_shell_session
+  system_hardening
+  ok "All tasks complete."
 }
 
 ########################################
@@ -286,34 +269,45 @@ run_all() {
 show_menu() {
   while true; do
     echo -e "${BOLD}${MAGENTA}Arch Post-Install Toolkit${RESET}"
-    echo -e "1) Install base packages"
-    echo -e "2) Setup kitty.conf"
-    echo -e "3) Install CPU microcode"
-    echo -e "4) Full Zsh setup (install + config + shell switch)"
-    echo -e "5) GitHub search + clone"
-    echo -e "6) Install XFCE4 Desktop (full)"
-    echo -e "7) Install XFCE4 Desktop (minimal)"
-    echo -e "8) Run ALL tasks"
-    echo -e "9) Start new shell session"
-    echo -e "0) Exit"
-    echo -ne "${YELLOW}Choose an option: ${RESET}"
+    echo "1) System Setup (base packages + yay + cleanup)"
+    echo "2) Shell & Terminal Setup (zsh + kitty)"
+    echo "3) Install CPU Microcode"
+    echo "4) GitHub Search + Clone"
+    echo "5) Dotfile Manager"
+    echo "6) System Hardening"
+    echo "7) Install XFCE4 (full)"
+    echo "8) Install XFCE4 (minimal)"
+    echo "9) Run ALL Tasks"
+    echo "10) Start New Shell Session / Exit"
+    echo -ne "${YELLOW}Choose: ${RESET}"
     read -r choice
 
     case "$choice" in
-      1) install_base_packages ;;
-      2) setup_kitty_config ;;
+      1) system_setup ;;
+      2) shell_terminal_setup ;;
       3) install_microcode ;;
-      4) setup_zsh_all ;;
-      5) search_and_clone_repo ;;
-      6) install_xfce4 ;;
-      7) install_xfce4_minimal ;;
-      8) run_all ;;
-      9) start_new_shell_session ;;
+      4) search_and_clone_repo ;;
+      5) setup_dotfiles ;;
+      6) system_hardening ;;
+      7) install_xfce4 ;;
+      8) install_xfce4_minimal ;;
+      9) run_all ;;
+      10) start_new_shell_session ;;
       0) exit 0 ;;
       *) warn "Invalid choice." ;;
     esac
     echo
   done
+}
+
+start_new_shell_session() {
+  echo -e "${CYAN}1) New shell\n2) Reboot\n3) Exit${RESET}"
+  read -r c
+  case "$c" in
+    1) exec "${SHELL:-bash}" ;;
+    2) sudo reboot ;;
+    3) return ;;
+  esac
 }
 
 show_menu
