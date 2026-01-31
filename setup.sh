@@ -50,6 +50,56 @@ ensure_repo() {
 }
 
 ########################################
+# GitHub Search + Clone
+########################################
+
+search_and_clone_repo() {
+  echo -ne "${CYAN}Enter GitHub search term: ${RESET}"
+  read -r term
+
+  [[ -z "$term" ]] && { warn "Search term cannot be empty."; return; }
+
+  info "Searching GitHub for '$term'..."
+
+  mapfile -t results < <(
+    curl -s "https://api.github.com/search/repositories?q=${term}&per_page=10" \
+    | jq -r '.items[] | "\(.full_name) | ⭐ \(.stargazers_count)"'
+  )
+
+  if [[ ${#results[@]} -eq 0 ]]; then
+    err "No repositories found."
+    return
+  fi
+
+  echo -e "${MAGENTA}Select a repository to clone:${RESET}"
+  local i=1
+  for repo in "${results[@]}"; do
+    echo -e "$i) $repo"
+    ((i++))
+  done
+
+  echo -ne "${YELLOW}Choice: ${RESET}"
+  read -r choice
+
+  if ! [[ "$choice" =~ ^[0-9]+$ ]] || (( choice < 1 || choice > ${#results[@]} )); then
+    warn "Invalid selection."
+    return
+  fi
+
+  local selected_repo
+  selected_repo=$(echo "${results[$((choice-1))]}" | cut -d'|' -f1 | xargs)
+
+  echo -ne "${CYAN}Clone into which directory? (default: \$HOME): ${RESET}"
+  read -r dest
+  [[ -z "$dest" ]] && dest="$HOME"
+
+  info "Cloning https://github.com/$selected_repo into $dest"
+  git clone "https://github.com/$selected_repo" "$dest/$(basename "$selected_repo")" \
+    && ok "Repository cloned successfully." \
+    || err "Clone failed."
+}
+
+########################################
 # Tasks
 ########################################
 
@@ -113,33 +163,18 @@ install_microcode() {
   echo
 }
 
-change_shell_to_zsh() {
-  echo -ne "${CYAN}Change your shell to zsh? (y/n): ${RESET}"
-  read -r zsh_answer
+########################################
+# Unified Zsh Setup
+########################################
 
-  [[ "$zsh_answer" != "y" ]] && { info "Skipping shell change."; echo; return 0; }
+setup_zsh_all() {
+  ensure_repo || return 1
+
+  info "Installing zsh + plugins + applying .zshrc + switching shell"
 
   if ! command -v zsh &>/dev/null; then
-    info "zsh is not installed. Installing..."
     sudo pacman -S --noconfirm zsh || { err "Failed to install zsh."; return 1; }
-  else
-    ok "zsh is already installed."
   fi
-
-  local zsh_path
-  zsh_path=$(command -v zsh)
-
-  if [[ "$SHELL" == "$zsh_path" ]]; then
-    ok "Your shell is already set to zsh."
-  else
-    info "Changing default shell to: $zsh_path"
-    chsh -s "$zsh_path" && ok "Shell changed. Log out and back in for it to take effect."
-  fi
-  echo
-}
-
-setup_zshrc() {
-  ensure_repo || return 1
 
   local src="$REPO_DIR/.zshrc"
   if [[ ! -f "$src" ]]; then
@@ -148,9 +183,18 @@ setup_zshrc() {
   fi
 
   backup_file "$ZSHRC_DEST"
-  info "Copying .zshrc to $ZSHRC_DEST"
   cp -f "$src" "$ZSHRC_DEST"
-  ok ".zshrc updated."
+  ok ".zshrc applied."
+
+  local zsh_path
+  zsh_path=$(command -v zsh)
+
+  if [[ "$SHELL" != "$zsh_path" ]]; then
+    chsh -s "$zsh_path" && ok "Default shell changed to zsh."
+  else
+    ok "Shell already set to zsh."
+  fi
+
   echo
 }
 
@@ -164,7 +208,7 @@ install_xfce4() {
 
   [[ "$xfce_answer" != "y" ]] && { info "Skipping XFCE4 installation."; echo; return 0; }
 
-  info "Installing XFCE4 (full) and essential components..."
+  info "Installing XFCE4 (full)..."
 
   sudo pacman -S --noconfirm \
     xfce4 xfce4-goodies \
@@ -175,11 +219,9 @@ install_xfce4() {
     xdg-user-dirs xdg-utils \
     && ok "XFCE4 desktop installed."
 
-  info "Enabling system services..."
   sudo systemctl enable lightdm
   sudo systemctl enable NetworkManager
   ok "Services enabled."
-
   echo
 }
 
@@ -199,11 +241,9 @@ install_xfce4_minimal() {
     xdg-user-dirs xdg-utils \
     && ok "Minimal XFCE4 installed."
 
-  info "Enabling system services..."
   sudo systemctl enable lightdm
   sudo systemctl enable NetworkManager
   ok "Services enabled."
-
   echo
 }
 
@@ -220,20 +260,10 @@ start_new_shell_session() {
   read -r choice
 
   case "$choice" in
-    1)
-      info "Starting new shell..."
-      exec "${SHELL:-bash}"
-      ;;
-    2)
-      info "Rebooting system..."
-      sudo reboot
-      ;;
-    3)
-      info "Exiting script."
-      ;;
-    *)
-      warn "Invalid choice."
-      ;;
+    1) exec "${SHELL:-bash}" ;;
+    2) sudo reboot ;;
+    3) info "Exiting." ;;
+    *) warn "Invalid choice." ;;
   esac
 }
 
@@ -245,9 +275,7 @@ run_all() {
   install_base_packages
   setup_kitty_config
   install_microcode
-  change_shell_to_zsh
-  setup_zshrc
-  # install_xfce4   # Uncomment if you want XFCE4 included in run-all
+  setup_zsh_all
   start_new_shell_session
 }
 
@@ -259,10 +287,10 @@ show_menu() {
   while true; do
     echo -e "${BOLD}${MAGENTA}Arch Post-Install Toolkit${RESET}"
     echo -e "1) Install base packages"
-    echo -e "2) Setup kitty.conf from repo"
+    echo -e "2) Setup kitty.conf"
     echo -e "3) Install CPU microcode"
-    echo -e "4) Change shell to zsh"
-    echo -e "5) Setup .zshrc from repo"
+    echo -e "4) Full Zsh setup (install + config + shell switch)"
+    echo -e "5) GitHub search + clone"
     echo -e "6) Start new shell session"
     echo -e "7) Install XFCE4 Desktop (full)"
     echo -e "8) Install XFCE4 Desktop (minimal)"
@@ -275,13 +303,13 @@ show_menu() {
       1) install_base_packages ;;
       2) setup_kitty_config ;;
       3) install_microcode ;;
-      4) change_shell_to_zsh ;;
-      5) setup_zshrc ;;
+      4) setup_zsh_all ;;
+      5) search_and_clone_repo ;;
       6) start_new_shell_session ;;
       7) install_xfce4 ;;
       8) install_xfce4_minimal ;;
       9) run_all ;;
-      0) info "Goodbye."; exit 0 ;;
+      0) exit 0 ;;
       *) warn "Invalid choice." ;;
     esac
     echo
