@@ -154,6 +154,63 @@ setup_zshrc() {
   echo
 }
 
+########################################
+# XFCE4 Installation
+########################################
+
+install_xfce4() {
+  echo -ne "${CYAN}Install full XFCE4 desktop environment? (y/n): ${RESET}"
+  read -r xfce_answer
+
+  [[ "$xfce_answer" != "y" ]] && { info "Skipping XFCE4 installation."; echo; return 0; }
+
+  info "Installing XFCE4 (full) and essential components..."
+
+  sudo pacman -S --noconfirm \
+    xfce4 xfce4-goodies \
+    lightdm lightdm-gtk-greeter lightdm-gtk-greeter-settings \
+    networkmanager \
+    pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber \
+    gvfs gvfs-mtp thunar-archive-plugin file-roller \
+    xdg-user-dirs xdg-utils \
+    && ok "XFCE4 desktop installed."
+
+  info "Enabling system services..."
+  sudo systemctl enable lightdm
+  sudo systemctl enable NetworkManager
+  ok "Services enabled."
+
+  echo
+}
+
+install_xfce4_minimal() {
+  echo -ne "${CYAN}Install minimal XFCE4 environment? (y/n): ${RESET}"
+  read -r xfce_min_answer
+
+  [[ "$xfce_min_answer" != "y" ]] && { info "Skipping minimal XFCE4 installation."; echo; return 0; }
+
+  info "Installing minimal XFCE4..."
+
+  sudo pacman -S --noconfirm \
+    xfce4 \
+    lightdm lightdm-gtk-greeter \
+    networkmanager \
+    pipewire pipewire-alsa pipewire-pulse wireplumber \
+    xdg-user-dirs xdg-utils \
+    && ok "Minimal XFCE4 installed."
+
+  info "Enabling system services..."
+  sudo systemctl enable lightdm
+  sudo systemctl enable NetworkManager
+  ok "Services enabled."
+
+  echo
+}
+
+########################################
+# Shell Session
+########################################
+
 start_new_shell_session() {
   echo -e "${CYAN}Choose an option:${RESET}"
   echo -e "1) Start a new terminal session"
@@ -181,7 +238,7 @@ start_new_shell_session() {
 }
 
 ########################################
-# Menu
+# Run All
 ########################################
 
 run_all() {
@@ -190,8 +247,13 @@ run_all() {
   install_microcode
   change_shell_to_zsh
   setup_zshrc
+  # install_xfce4   # Uncomment if you want XFCE4 included in run-all
   start_new_shell_session
 }
+
+########################################
+# Menu
+########################################
 
 show_menu() {
   while true; do
@@ -203,6 +265,8 @@ show_menu() {
     echo -e "5) Setup .zshrc from repo"
     echo -e "6) Run ALL tasks"
     echo -e "7) Start new shell session"
+    echo -e "8) Install XFCE4 Desktop (full)"
+    echo -e "9) Install XFCE4 Desktop (minimal)"
     echo -e "0) Exit"
     echo -ne "${YELLOW}Choose an option: ${RESET}"
     read -r choice
@@ -215,6 +279,8 @@ show_menu() {
       5) setup_zshrc ;;
       6) run_all ;;
       7) start_new_shell_session ;;
+      8) install_xfce4 ;;
+      9) install_xfce4_minimal ;;
       0) info "Goodbye."; exit 0 ;;
       *) warn "Invalid choice." ;;
     esac
